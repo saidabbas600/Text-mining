@@ -1,0 +1,338 @@
+---
+title: "monetory policy"
+author: "said abbas"
+format: html
+editor: visual
+---
+
+# load libraries
+
+```{r}
+library(tm)
+library(NLP)
+library(textdata)
+
+library(SnowballC)
+library(wordcloud)
+library(RColorBrewer)
+library(syuzhet)
+library(ggplot2)
+library(stringr)
+library(tidyverse)
+library(tidytext)
+library(topicmodels)
+library(tidyr)
+library(dplyr)
+library(slam)
+library(text)
+library(glmnet)
+library(caret)
+library(e1071)
+library(igraph)
+library(ggraph)
+library(visNetwork)
+```
+
+# loading Files
+
+```{r}
+#choose.files()
+folder <- "F:/thesis/data mining wiith r/s abbas txt"
+folder
+
+```
+
+# Reading Files
+
+```{r}
+filelist <- list.files(path = folder)
+filelist <- paste(folder, "\\" ,filelist, sep="")
+typeof(filelist)
+```
+
+# Making Corpus of data
+
+```{r}
+a <- lapply(filelist, FUN = readLines) # for readin line 
+corpus <- lapply(a, FUN = paste, collapse= " ")
+```
+
+# Preprocessing
+
+```{r}
+# Check if corpus is a character vector
+if (!is.character(corpus)) {
+  corpus <- as.character(corpus)
+}
+
+# Ensure corpus is properly formatted
+print("Checking corpus structure:")
+str(corpus)
+
+# Convert to ASCII to handle special characters
+corpus_ascii <- iconv(corpus, to = "ASCII//TRANSLIT", sub = "")
+
+# Check the result of conversion
+print("After iconv:")
+print(corpus_ascii[1])  # Print first element to check
+
+# Remove non-word characters (punctuation, dots, etc.)
+corpus2 <- gsub(pattern = "\\W", replace = " ", corpus_ascii)
+
+# Check the result of gsub
+print("After gsub for non-word characters:")
+print(corpus2[1])  # Print first element to check
+
+# Further processing (if needed)
+# Remove digits
+corpus2 <- gsub(pattern = "\\d", replace = " ", corpus2)
+
+# Convert to lower case
+corpus2 <- tolower(corpus2)
+
+# Remove stopwords (ensure tm package is loaded)
+library(tm)
+corpus2 <- removeWords(corpus2, stopwords("english"))
+
+# Remove single letter words
+corpus2 <- gsub(pattern = "\\b[A-z]\\b", replace = " ", corpus2)
+
+# Remove extra white spaces
+corpus2 <- stripWhitespace(corpus2)
+
+# Final check
+print("Final processed corpus:")
+print(corpus2[1])  # Print first element to....
+```
+
+# creating WordCloud
+
+```{r}
+dtm <- TermDocumentMatrix(corpus2)
+m <- as.matrix(dtm)  #BOW
+# Inspect the terms (words) and documents in the matrix
+terms <- colnames(m)  # Words
+docs <- rownames(m)
+word_freqs <- sort(rowSums(m), decreasing=TRUE)
+df <- data.frame(word=names(word_freqs), freq=word_freqs)
+```
+
+## Generating Wordcloud
+
+```{r}
+set.seed(1234) # For reproducibility
+wordcloud(words = df$word, freq = df$freq, min.freq = 1,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+
+```
+
+```{r}
+#first convert it into vector
+corpus3 <- Corpus(VectorSource(corpus2)) #for converting corpus2 into vector
+tdm <- TermDocumentMatrix(corpus3)
+```
+
+# Sentiment Analysis
+
+```{# Get sentiment scores}
+sentiment_scores <- get_nrc_sentiment(corpus2)
+print(sentiment_scores)
+
+# Summarize sentiment scores
+sentiment_summary <- colSums(sentiment_scores[,])
+print(sentiment_summary)
+
+
+```
+
+## Visualisation of Text
+
+```{r}
+barplot(sentiment_summary, las = 2, col = rainbow(10),
+        main = "Sentiment Scores", ylab = "Count")
+```
+
+### Positive and Negative word sentiments
+
+```{r}
+# Extract positive and negative word frequencies
+positive_words_count <- sentiment_summary["positive"]
+negative_words_count <- sentiment_summary["negative"]
+
+```
+
+```{r}
+# Print the counts
+print(paste("Positive words count:", positive_words_count))
+print(paste("Negative words count:", negative_words_count))
+```
+
+# Visualisation OF positive and negative
+
+```{r}
+# Create a data frame for visualization
+sentiment_df <- data.frame(
+  Sentiment = c("Positive", "Negative"),
+  Count = c(positive_words_count, negative_words_count)
+)
+
+# Print the counts (optional)
+print(sentiment_df)
+
+```
+
+```{r}
+# Plot the sentiment counts
+ggplot(sentiment_df, aes(x = Sentiment, y = Count, fill = Sentiment)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("Positive" = "green", "Negative" = "red")) +
+  ggtitle("Positive vs Negative Sentiment in Corpus 2") +
+  ylab("Word Count") +
+  xlab("Sentiment") +
+  theme_minimal()
+
+```
+
+# Topic Models
+
+Latent Dirichlet Allocation (LDA) is a widely used algorithm for topic modeling in text analysis. It helps in identifying underlying topics within a collection of documents by representing each document as a mixture of topics. LDA works by inferring topics from the distribution of words in the documents, using prior distributions to ensure that the topics are appropriately sparse and smooth. Through iterative updates, LDA determines the topic distributions for each document and word distributions for each topic until it reaches a stable solution. It's a valuable tool for exploring the thematic structure of text collections, with applications in various fields like information retrieval and natural language processing. As per @fig-1
+
+## Fitting LDA
+
+```{r}
+
+
+```
+
+```{r}
+dynamic_lda <- LDA(dtm, k = 5, method = "Gibbs")
+```
+
+# Document-Topic Probabilities
+
+```{r}
+ap_document <- tidy(lda_model,matrix("gamma"))
+ap_document
+```
+
+```{r}
+assignment <- augment(lda_model, data= dtm)
+assignment
+```
+
+# Sentiment_analysis
+
+```{r}
+get_sentiments("afinn")
+get_sentiments("bing")
+get_sentiments("nrc")
+nrc_joy <- get_sentiments("nrc") %>% 
+  filter(sentiment =="joy")
+```
+
+```{r}
+sentiments <- get_nrc_sentiment(corpus2)
+overall_sentiment <- rowSums(sentiments[,c("positive", "negative")])
+overall_sentiment
+
+```
+
+# TF-IDF
+
+```{r}
+#  remove invalid characters
+clean_text <- function(text) {
+  text <- iconv(text, to = "UTF-8", sub = "byte")
+  text <- gsub("[^\x01-\x7F]", "", text)  # Remove non-ASCII characters
+  return(text)
+}
+
+# Apply the cleaning function to your corpus
+corpus_cleaned <- tm_map(corpus3, content_transformer(clean_text))
+
+# Create a Document-Term Matrix from the cleaned corpus
+dtm <- DocumentTermMatrix(corpus_cleaned)
+
+# Calculate TF-IDF
+tfidf <- weightTfIdf(dtm)
+
+# Inspect the TF-IDF matrix
+inspect(tfidf)
+
+# Convert to a data frame if needed
+tfidf_matrix <- as.matrix(tfidf)
+tfidf_df <- as.data.frame(tfidf_matrix)
+
+# View the first few rows
+head(tfidf_df)
+```
+
+```{r}
+term_tfidf <- colSums(as.matrix(tfidf))
+term_tfidf <- sort(term_tfidf, decreasing = TRUE)
+
+# Convert to a data frame for ggplot2
+df_tfidf <- data.frame(term = names(term_tfidf), tfidf = term_tfidf)
+
+# Select the top 20 terms
+top_terms <- head(df_tfidf, 30)
+
+# Create the bar plot
+ggplot(top_terms, aes(x = reorder(term, tfidf), y = tfidf)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "Top 20 Terms by TF-IDF", x = "Term", y = "TF-IDF") +
+  theme_minimal()
+```
+
+# Bigram
+
+```{r}
+# Create a data frame from the corpus
+text_df <- tibble(line = 1:length(corpus2), text = corpus2)
+text_df
+# Generate bigrams
+bigrams <- text_df %>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+bigrams
+```
+
+```{r}
+# Count bigrams
+bigram_counts <- bigrams %>%
+  count(bigram, sort = TRUE)
+bigram_counts
+```
+
+```{r}
+# Separate the bigrams into individual words
+bigram_separated <- bigram_counts %>%
+  separate(bigram, into = c("word1", "word2"), sep = " ")
+bigram_separated
+```
+
+```{r}
+# Filter to keep only the bigrams with more than one occurrence (optional)
+bigram_filtered <- bigram_separated %>%
+  filter(n > 1)
+bigram_filtered
+```
+
+```{r}
+#| label : fig-1
+# Create a graph from the bigrams
+bigram_graph <- graph_from_data_frame(bigram_filtered, directed = TRUE)
+
+# Plot the graph
+set.seed(42) # For reproducibility
+ggraph(bigram_graph, layout = "fr") + 
+  geom_edge_link(aes(edge_alpha = n, edge_width = n), show.legend = FALSE) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void() +
+  ggtitle("Bigram Graph") +
+  scale_edge_alpha(range = c(0.3, 1)) +
+  scale_edge_width(range = c(0.5, 2))
+
+```

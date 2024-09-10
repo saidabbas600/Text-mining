@@ -1,0 +1,278 @@
+---
+title: "Master File"
+author: "Atiq"
+prefer-html: true
+format: docx
+editor: visual
+---
+
+# Loading Libraries
+
+```{r,warning=FALSE,message=FALSE}
+library(tm)
+library(NLP)
+library(SnowballC)
+library(wordcloud)
+library(RColorBrewer)
+library(syuzhet)
+library(ggplot2)
+library(stringr)
+library(tidyverse)
+library(tidytext)
+library(topicmodels)
+library(tidyr)
+library(dplyr)
+library(slam)
+library(text)
+library(glmnet)
+library(caret)
+library(e1071)
+library(igraph)
+library(ggraph)
+library(visNetwork)
+library(LDAvis)
+library(textmineR)
+library(stringi)
+library(pdftools)
+library(rvest)
+library(readtext)
+
+```
+
+# Loading Files
+
+```{r}
+# Set the directory path
+dir_path <- "C:\\Users\\Pc\\OneDrive - Higher Education Commission\\Thesis folder\\Thesis Data\\text"
+
+# Read all text files into a single data frame
+text_data <- readtext(paste0(dir_path, "/*.txt"))
+
+# Create a corpus from the text data
+corpus <- Corpus(VectorSource(text_data$text))
+
+# Convert to lowercase
+corpus <- tm_map(corpus, content_transformer(tolower))
+
+# Remove numbers
+corpus <- tm_map(corpus, removeNumbers)
+
+# Remove punctuation
+corpus <- tm_map(corpus, removePunctuation)
+
+# Remove whitespace
+corpus <- tm_map(corpus, stripWhitespace)
+
+# Remove English stop words
+corpus <- tm_map(corpus, removeWords, stopwords("english"))
+
+# Perform stemming
+corpus <- tm_map(corpus, stemDocument)
+# Tokenize the text
+tokenize <- function(text) {
+  unlist(strsplit(text, "\\W"))
+}
+
+tokens <- lapply(corpus, tokenize)
+
+# Combine tokens back into a single string
+processed_corpus <- sapply(tokens, function(x) paste(x, collapse = " "))
+processed_corpus[1]
+```
+
+# 1.NLP
+
+## 1.1 DTM
+
+```{r}
+dtm <- TermDocumentMatrix(processed_corpus)
+m <- as.matrix(dtm)
+v <- sort(rowSums(m), decreasing = TRUE)
+d <- data.frame(frequency=v)
+d <- data.frame(word=names(v), frequency=v)
+head(d,60)
+```
+
+## 1.2 frequent terms
+
+```{r}
+freq <- findFreqTerms(dtm,lowfreq = 10)
+freq %>% head(200)
+```
+
+## 1.3 frequent term association
+
+```{r}
+freq_asso <- findAssocs(dtm,terms = "adjust", corlimit = 0.3) # i only check for adjust
+freq_asso %>% head(10)
+```
+
+## 1.4 Plot most frequent words
+
+```{r}
+barplot(d[1:10,]$freq, las=2, names.arg = d[1:10,]$word,
+        col = "lightgreen", main = " Most frequent words in economic update document",
+        ylab = "word frequencies")
+```
+
+## 1.5 Wordcloude
+
+```{r}
+# Convert the encoding of the 'word' column to UTF-8
+d$word <- iconv(d$word, from = "latin1", to = "UTF-8")
+
+# Alternatively, remove non-UTF-8 characters
+d$word <- iconv(d$word, from = "latin1", to = "UTF-8", sub = "")
+
+# Create an interactive word cloud
+library(wordcloud2)
+wordcloud2(data = d, size = 1, color = "random-light", backgroundColor = "black", shape = 'circle')
+```
+
+# 1.6 Sentiments
+
+```{r}
+#syuzhet 
+syuzhet_vector <- get_sentiment(processed_corpus, method= "syuzhet") 
+summary(syuzhet_vector)
+```
+
+```{r}
+#being sentiments
+bing_vector <- get_sentiment(processed_corpus,method = "bing")
+summary(bing_vector)
+```
+
+```{r}
+#afinn sentiments
+afinn_vector <- get_sentiment(processed_corpus, method = "afinn")
+summary(afinn_vector)
+```
+
+```{r}
+document <- as.character(processed_corpus) # first convert corpus to character
+vector.nrc <- get_nrc_sentiment(document) #analyze text based on nrc lexicon
+df.nrc <- data.frame(t(vector.nrc)) #transpose
+#the function rowSums computes column sums across rows for each level of grouping.
+td_new <- data.frame(rowSums(df.nrc[1:3])) # check ncol(df.nrc) for ramge 
+
+#transformmation and cleaning
+names(td_new)[1] <- "count"
+td_new <- cbind("sentiment" = rownames(td_new),td_new)
+rownames(td_new) <- NULL
+td_new2 <- td_new[1:10,]
+
+#plot one-count of words associated with each sentiment
+quickplot(sentiment, data= td_new2, weight= count,geom="bar", fill= sentiment,ylab = "count") + ggtitle("financial statments")
+```
+
+# 
+
+# 2. Topic Models
+
+## 2.1 DTM
+
+```{r}
+# Create DTM
+DTM <- DocumentTermMatrix(processed_corpus)
+
+# Calculate row sums to identify empty documents
+row_sums <- rowSums(as.matrix(DTM))
+
+# Remove empty documents
+DTM <- DTM[row_sums > 0,]
+```
+
+## 2.2 LDA
+
+```{r}
+Model_lda <- LDA(DTM, k = 4, control = list(seed = 1234))
+Model_lda
+```
+
+## 2.3 Probability of word being associated to a topic
+
+```{r}
+beta_topics <- tidy(Model_lda, matrix = "beta") # creat the beta model
+beta_topics %>%   head(60)# show all the information in beta topic
+```
+
+## 2.4 Grouping the terms by topic
+
+```{r}
+beta_top_terms <- beta_topics %>% 
+  group_by(topic) %>% 
+  slice_max(beta, n = 10) %>% 
+  ungroup() %>% 
+  arrange(topic, -beta)
+beta_top_terms %>% head(50)
+```
+
+## 2.5 Display the grouped terms on the charts
+
+```{r}
+beta_top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free", ncol = 2) +  # Adjust the number of columns as needed
+  scale_y_reordered() +
+  labs(
+    title = "Top Terms by Topic",
+    subtitle = "Visualizing the top terms within each topic based on beta values",
+    x = "Beta Value",
+    y = "Terms",
+    caption = "Data Source: Economic Update"
+  ) +
+  theme_minimal(base_size = 15) +
+  theme(
+    plot.title = element_text(face = "bold", size = 18),
+    plot.subtitle = element_text(size = 14),
+    axis.title = element_text(face = "bold"),
+    strip.text = element_text(face = "bold", size = 14),
+    plot.caption = element_text(hjust = 0)
+  ) +
+  scale_fill_brewer(palette = "Set3")  # Using a more distinct color palette
+```
+
+## 2.6 Filtering terms by Topics
+
+```{r}
+tidy(DTM) %>% 
+  filter(document == 3) %>% 
+  arrange(desc(count))
+```
+
+## 2.7 Examining per document per topic probabilities
+
+```{r}
+gamma_documents <- tidy(Model_lda, matrix = "gamma")
+gamma_documents %>% head(20)
+```
+
+## 2.8 Create a data frame with gamma results
+
+```{r}
+doc_gamma.df <- data.frame(gamma_documents)
+doc_gamma.df$chapter <- rep(1: dim(DTM)[1],4)
+```
+
+## 2.9 plotting gamma results
+
+```{r}
+ggplot(data = doc_gamma.df, aes(x = chapter, y = gamma, 
+                                group = factor(topic), colour = factor(topic))) +
+  geom_line(size = 1) +  # Line thickness
+  geom_point(size = 2) +  # Points on the lines
+  facet_grid(rows = vars(factor(topic))) +  # Facet grid for better layout control
+  scale_colour_brewer(palette = "Dark2") +  # Custom color palette
+  theme_minimal(base_size = 15) +  # Minimal theme for a clean look
+  labs(title = "Gamma Values by Chapter and Topic",
+       x = "Chapter",
+       y = "Gamma",
+       colour = "Topic") +  # Titles and labels
+  theme(legend.position = "bottom",  # Move legend to the bottom
+        plot.title = element_text(hjust = 0.5))  # Center align the title
+```
+
+# 
